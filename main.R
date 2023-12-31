@@ -228,6 +228,15 @@ out %>% write_csv('tmp.csv')
 
 d_share_teacher
 
+coalesce_columns <- function(d_items, suffix) {
+  col_names_without_suffix <- gsub(paste0(suffix, "$"), "", names(d_items))
+  for (col in col_names_without_suffix) {
+    d_items[col] <- d_items %>% select(matches(col)) %>% coalesce(!!!.)
+  }
+  d_items <- d_items[,col_names_without_suffix]
+  return(d_items)
+}
+
 item_analysis <- function(d, refs, s = 'foo', n_choices=3, choice_split_take=2) {
   cols <- get_column_by_desc(d, refs, s)
   
@@ -238,7 +247,8 @@ item_analysis <- function(d, refs, s = 'foo', n_choices=3, choice_split_take=2) 
     `colnames<-`(choices) %>% 
     janitor::clean_names() %>% 
     select(-matches('^other')) %>% 
-    mutate_all(as.numeric)
+    mutate_all(as.numeric) %>% 
+    coalesce_columns("_2")
   
   rank_of_unselected <- mean((n_choices+1):ncol(d_items))
   
@@ -264,7 +274,12 @@ item_analysis(d, refs, s = "Rank the factors you selected in the previous questi
 item_analysis(d, refs, s = "the aspects you'd be more interested when reflecting on your teaching practice, with one", n_choices=3)
 item_analysis(d, refs, s = "rank the kind of information about your students you would be more interested in accessing when reflecting ", n_choices=3, choice_split_take=4)
 item_analysis(d, refs, s = "Rank the following methods for collecting students’ information ", n_choices=3)
-item_analysis(d, refs, s = "Rank the kind of information about teachers", n_choices=3, choice_split_take=4)
 item_analysis(d, refs, s = "Several sources for collecting teacher data", n_choices=5)
 item_analysis(d, refs, s = "Rank your preferences about the people you would like to have", n_choices=2, choice_split_take = 10)
 item_analysis(d, refs, s = "Rank your preferences to keep track of your reflection sessions", n_choices=3, choice_split_take = 10)
+
+
+
+# Revise
+item_analysis(d, refs, s = "Rank the kind of information about teachers", n_choices=3, choice_split_take=4)
+
