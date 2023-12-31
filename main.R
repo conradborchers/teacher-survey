@@ -263,10 +263,16 @@ item_analysis <- function(d, refs, s = 'foo', n_choices=3, choice_split_take=2) 
   res <- d_items %>%
     group_by(item) %>%
     summarize(
-      chosen_prop_ci = calculate_binomial_ci(chosen)
+      chosen_prop_ci = calculate_binomial_ci(chosen),
+      median_rank = median(rank),
+      iqr_rank = IQR(rank),
+      mean_rank = mean(rank),
+      sd_rank = sd(rank)
     )
   return(res %>% arrange(desc(chosen_prop_ci)))
 }
+
+
 
 # RQ 1
 
@@ -278,8 +284,11 @@ item_analysis(d, refs, s = "Several sources for collecting teacher data", n_choi
 item_analysis(d, refs, s = "Rank your preferences about the people you would like to have", n_choices=2, choice_split_take = 10)
 item_analysis(d, refs, s = "Rank your preferences to keep track of your reflection sessions", n_choices=3, choice_split_take = 10)
 
+# Final question selection RQ1
+item_analysis(d, refs, s = "the aspects you'd be more interested when reflecting on your teaching practice, with one", n_choices=3)
+item_analysis(d, refs, s = "rank the kind of information about your students you would be more interested in accessing when reflecting ", n_choices=3, choice_split_take=4)
+item_analysis(d, refs, s = "you would like to have access to when reflecting on the most important aspect of your teaching practice selected before, ", n_choices=3, choice_split_take=4)
 
+# Ranks
 
-# Revise
-item_analysis(d, refs, s = "Rank the kind of information about teachers", n_choices=3, choice_split_take=4)
 
