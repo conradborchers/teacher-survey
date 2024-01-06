@@ -237,7 +237,7 @@ coalesce_columns <- function(d_items, suffix) {
   return(d_items)
 }
 
-item_analysis <- function(d, refs, s = 'foo', n_choices=3, choice_split_take=2) {
+item_analysis <- function(d, refs, s = 'foo', n_choices=3, choice_split_take=2, return_d_items=FALSE) {
   cols <- get_column_by_desc(d, refs, s)
   
   choices <- get_desc_by_column(d, refs, cols) %>% map_chr(~get_choice_by_description(., split='-', take=choice_split_take))
@@ -259,6 +259,9 @@ item_analysis <- function(d, refs, s = 'foo', n_choices=3, choice_split_take=2) 
   d_items <-  d_items %>% 
     pivot_longer(!response_id, names_to = 'item', values_to = 'rank') %>% 
     mutate(chosen = rank <= n_choices)
+  
+  if (return_d_items)
+    return(d_items)
   
   res <- d_items %>%
     group_by(item) %>%
@@ -289,6 +292,39 @@ item_analysis(d, refs, s = "the aspects you'd be more interested when reflecting
 item_analysis(d, refs, s = "rank the kind of information about your students you would be more interested in accessing when reflecting ", n_choices=3, choice_split_take=4)
 item_analysis(d, refs, s = "you would like to have access to when reflecting on the most important aspect of your teaching practice selected before, ", n_choices=3, choice_split_take=4)
 
+# Test of top choice was second
+binom.test(60, 116, 0.414)
 # Ranks
 
+# Follow up pathway dependency analysis
 
+# Dependency analysis RQ2 based on split top item RQ1
+
+d_ref_posthoc <- item_analysis(d, refs, s = "the aspects you'd be more interested when reflecting on your teaching practice, with one", 
+              n_choices=3, return_d_items = TRUE) %>% 
+  filter(item == 'how_i_motivate_and_help_students') %>% 
+  select(response_id, chosen_motivate=chosen)
+
+d_posthoc <- d_acceptance_test %>% 
+  left_join(d_ref_posthoc, by='response_id') 
+
+median(d_posthoc$rank_student[d_posthoc$chosen_motivate & d_posthoc$item=='audio'])
+median(d_posthoc$rank_student[!d_posthoc$chosen_motivate & d_posthoc$item=='audio'])
+
+median(d_posthoc$rank_student[d_posthoc$chosen_motivate & d_posthoc$item=='video'])
+median(d_posthoc$rank_student[!d_posthoc$chosen_motivate & d_posthoc$item=='video'])
+
+median(d_posthoc$rank_student[d_posthoc$chosen_motivate & d_posthoc$item=='log data'])
+median(d_posthoc$rank_student[!d_posthoc$chosen_motivate & d_posthoc$item=='log data'])
+
+mean(d_posthoc$rank_student[d_posthoc$chosen_motivate & d_posthoc$item=='location'])
+mean(d_posthoc$rank_student[!d_posthoc$chosen_motivate & d_posthoc$item=='location'])
+
+wilcox.test(d_posthoc$rank_student[d_posthoc$chosen_motivate & d_posthoc$item=='audio'], 
+            d_posthoc$rank_student[!d_posthoc$chosen_motivate & d_posthoc$item=='audio'], paired = FALSE)
+wilcox.test(d_posthoc$rank_student[d_posthoc$chosen_motivate & d_posthoc$item=='video'], 
+            d_posthoc$rank_student[!d_posthoc$chosen_motivate & d_posthoc$item=='video'], paired = FALSE)
+wilcox.test(d_posthoc$rank_student[d_posthoc$chosen_motivate & d_posthoc$item=='log data'], 
+            d_posthoc$rank_student[!d_posthoc$chosen_motivate & d_posthoc$item=='log data'], paired = FALSE)
+wilcox.test(d_posthoc$rank_student[d_posthoc$chosen_motivate & d_posthoc$item=='location'], 
+            d_posthoc$rank_student[!d_posthoc$chosen_motivate & d_posthoc$item=='location'], paired = FALSE)
