@@ -38,11 +38,17 @@ calculate_binomial_ci <- function(data) {
 
 return_column <- function(d, refs, s = 'foo') {
   cols <- get_column_by_desc(d, refs, s)
+  cat("columns are: ", cols, '\n')
+  descs <- get_desc_by_column(d, refs, cols)
+  cat("descriptions are: ", descs, '\n')
   return(d %>% select(all_of(cols)))
 }
 
 return_rankings <- function(d, refs, s = 'foo', n_choices=3, choice_split_take=2) {
   cols <- get_column_by_desc(d, refs, s)
+  cat("columns are: ", cols, '\n')
+  descs <- get_desc_by_column(d, refs, cols)
+  cat("descriptions are: ", descs, '\n')
   
   choices <- get_desc_by_column(d, refs, cols) %>% map_chr(~get_choice_by_description(., split='-', take=choice_split_take))
   
@@ -239,6 +245,9 @@ coalesce_columns <- function(d_items, suffix) {
 
 item_analysis <- function(d, refs, s = 'foo', n_choices=3, choice_split_take=2, return_d_items=FALSE) {
   cols <- get_column_by_desc(d, refs, s)
+  cat("columns are: ", cols, '\n')
+  descs <- get_desc_by_column(d, refs, cols)
+  cat("descriptions are: ", descs, '\n')
   
   choices <- get_desc_by_column(d, refs, cols) %>% map_chr(~get_choice_by_description(., split='-', take=choice_split_take))
   
@@ -288,9 +297,22 @@ item_analysis(d, refs, s = "Rank your preferences about the people you would lik
 item_analysis(d, refs, s = "Rank your preferences to keep track of your reflection sessions", n_choices=3, choice_split_take = 10)
 
 # Final question selection RQ1
+sink('author-survey-reference.txt')
+cat('############# RQ1 preferences ############# \n')
 item_analysis(d, refs, s = "the aspects you'd be more interested when reflecting on your teaching practice, with one", n_choices=3)
 item_analysis(d, refs, s = "rank the kind of information about your students you would be more interested in accessing when reflecting ", n_choices=3, choice_split_take=4)
 item_analysis(d, refs, s = "you would like to have access to when reflecting on the most important aspect of your teaching practice selected before, ", n_choices=3, choice_split_take=4)
+cat('############################### \n\n')
+cat('############# RQ2 acceptance ############# \n')
+d_what_students <- return_rankings(d, refs, s = "Several sources for collecting data from your students ", n_choices=4)
+d_what_teachers <- return_rankings(d, refs, s = "Several sources for collecting teacher data ", n_choices=5)
+cat('############################### \n\n')
+cat('############# RQ3 share ############# \n')
+d_share <- return_column(d, refs, s = "with whom") %>% 
+  select(-matches('text')) %>% 
+  `colnames<-`(c('share_student', 'share_teacher'))
+cat('###############################\n')
+sink()
 
 # Test of top choice was second
 binom.test(60, 116, 0.414)
