@@ -5,6 +5,14 @@ d <- read_csv('survey-data-nov14-23.csv') %>%
   janitor::clean_names() %>% 
   slice(3:n()) # headers
 
+#
+convert_range_to_numeric_center <- function(range_string) {
+  bounds <- as.numeric(unlist(strsplit(range_string, " - ")))
+  center <- mean(bounds, na.rm = TRUE)
+  return(center)
+}
+d$q1_31 %>% sapply(convert_range_to_numeric_center) %>% as.numeric() %>% mean(na.rm=TRUE)
+
 # Descriptions
 refs <- read_csv('survey-data-nov14-23.csv', skip = 1) %>% names()
 
