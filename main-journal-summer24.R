@@ -406,7 +406,11 @@ d_share_teacher <- d_share %>%
 d_share_student_agg <- d_share_student %>%
   group_by(share_student, high_experience) %>%
   summarize(
-    share_perc = mean(selected)
+    shareperc = mean(selected),
+    nselect = sum(selected),
+    nn = n(),
+    cilower = binom.test(sum(selected), n(), conf.level = 0.95)$conf.int[1],
+    ciupper = binom.test(sum(selected), n(), conf.level = 0.95)$conf.int[2]
   ) %>% 
   ungroup() %>% 
   arrange(share_student)
@@ -414,180 +418,75 @@ d_share_student_agg <- d_share_student %>%
 d_share_teacher_agg <- d_share_teacher %>%
   group_by(share_teacher) %>%
   summarize(
-    share_perc = mean(selected)
+    shareperc = mean(selected),
+    nselect = sum(selected),
+    nn = n(),
+    cilower = binom.test(sum(selected), n(), conf.level = 0.95)$conf.int[1],
+    ciupper = binom.test(sum(selected), n(), conf.level = 0.95)$conf.int[2]
   ) %>% 
   ungroup() %>% 
-  arrange(share_perc)
+  arrange(shareperc)
 
 out <- inner_join(d_share_student_agg, d_share_teacher_agg, 
                   by=c('share_student'='share_teacher'), 
                   suffix = c("_student", "_teacher")) %>% 
-  mutate(share_perc_student = round(100*share_perc_student, 2)) %>% 
-  mutate(share_perc_teacher = round(100*share_perc_teacher, 2)) %>% 
-  as.data.frame()
-###### OLD CODE #######
-
-# What data (teacher vs. student)
-
-d_what_students <- return_rankings(d, refs, s = "Several sources for collecting data from your students ", n_choices=4)
-d_what_teachers <- return_rankings(d, refs, s = "Several sources for collecting teacher data ", n_choices=5)
-
-d_what_students$item %>% table
-d_what_teachers$item %>% table
-
-d_what_students %>% 
-  group_by(item) %>% 
-  summarize(median_rank = median(rank), iqr_rank = IQR(rank))
-
-d_what_teachers %>% 
-  group_by(item) %>% 
-  summarize(median_rank = median(rank), iqr_rank = IQR(rank))
-
-p1 <- d_what_students %>%
-  mutate(rank = floor(rank)) %>%
-  count(item, rank) %>%
-  mutate(item = case_when(
-    str_detect(item, 'location') ~ 'location',
-    str_detect(item, 'behavior') ~ 'log data',
-    TRUE ~ item
-  )) %>% 
-  ggplot(aes(x = item, y = n, fill = as.factor(rank))) +  # Setting x, y, and fill aesthetics
-  geom_bar(stat = "identity") +  # Creating a bar plot with the counts
-  labs(x = "Item", y = "Count", fill = "Rank") +  # Adding labels
-  ggtitle("Student Data") +  # Adding a title
-  theme_minimal() +   # Applying a minimal theme (you can customize this further)
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-p2 <- d_what_teachers %>%
-  mutate(rank = floor(rank)) %>%
-  count(item, rank) %>%
-  mutate(item = case_when(
-    str_detect(item, 'location') ~ 'location',
-    str_detect(item, 'behavior') ~ 'log data',
-    str_detect(item, 'stress') ~ 'phyiological data',
-    TRUE ~ item
-  )) %>% 
-  ggplot(aes(x = item, y = n, fill = as.factor(rank))) +  # Setting x, y, and fill aesthetics
-  geom_bar(stat = "identity") +  # Creating a bar plot with the counts
-  labs(x = "Item", y = "Count", fill = "Rank") +  # Adding labels
-  ggtitle("Teacher Data") +  # Adding a title
-  theme_minimal() +   # Applying a minimal theme (you can customize this further)
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-
-gridExtra::grid.arrange(p1, p2, ncol=2)
-
-# Equalizing
-d_what_teachers_eq <- d_what_teachers %>% 
-  mutate(item = case_when(
-    str_detect(item, 'location') ~ 'location',
-    str_detect(item, 'behavior') ~ 'log data',
-    str_detect(item, 'stress') ~ 'physiological data',
-    TRUE ~ item
-  )) %>% 
-  arrange(response_id, rank) %>% 
-  filter(item != 'physiological data') %>% 
-  group_by(response_id) %>% 
-  mutate(rank = rank(rank)) %>% # Re-rank for standardization
-  ungroup()
-
-d_what_students_eq <- d_what_students %>% 
-  mutate(item = case_when(
-    str_detect(item, 'location') ~ 'location',
-    str_detect(item, 'behavior') ~ 'log data',
-    str_detect(item, 'stress') ~ 'physiological data',
-    TRUE ~ item
-  )) 
-
-d_acceptance_test <- inner_join(
-d_what_teachers_eq %>% select(-chosen),
-d_what_students_eq %>% select(-chosen),
-by=c('response_id', 'item'),
-suffix=c('_teacher', '_student')
-)
-
-d_audio <- d_acceptance_test %>% filter(item=='audio')
-wilcox.test(d_audio$rank_student, d_audio$rank_teacher, paired = TRUE)
-median(d_audio$rank_student);median(d_audio$rank_teacher) 
-
-tmp <- d_acceptance_test %>% filter(item=='video')
-wilcox.test(tmp$rank_student, tmp$rank_teacher, paired = TRUE)
-median(tmp$rank_student);median(tmp$rank_teacher) 
-
-tmp <- d_acceptance_test %>% filter(item=='location')
-wilcox.test(tmp$rank_student, tmp$rank_teacher, paired = TRUE)
-median(tmp$rank_student);median(tmp$rank_teacher) 
-
-tmp <- d_acceptance_test %>% filter(item=='log data')
-wilcox.test(tmp$rank_student, tmp$rank_teacher, paired = TRUE)
-median(tmp$rank_student);median(tmp$rank_teacher) 
-
-# With whom would they be willing to share?
-d_share <- return_column(d, refs, s = "with whom") %>% 
-  select(-matches('text')) %>% 
-  `colnames<-`(c('share_student', 'share_teacher'))
-
-get_desc_by_column(d, refs, names(d_share))
-
-d_share_student <- d_share %>% 
-  select(share_student) %>% 
-  mutate(teacher = paste('participant', 1:n(), sep='-')) %>% 
-  mutate(share_student = str_split(share_student, ',')) %>% 
-  unchop(share_student) %>% 
-  mutate(selected=TRUE) %>% 
-  complete(share_student, teacher, fill = list(selected=FALSE)) %>% 
-  filter(!str_detect(share_student, 'Other \\(please|specify\\)')) 
-
-d_share_teacher <- d_share %>% 
-  select(share_teacher) %>% 
-  mutate(teacher = paste('participant', 1:n(), sep='-')) %>% 
-  mutate(share_teacher = str_split(share_teacher, ',')) %>% 
-  unchop(share_teacher) %>% 
-  mutate(selected=TRUE) %>% 
-  complete(share_teacher, teacher, fill = list(selected=FALSE)) %>% 
-  filter(!str_detect(share_teacher, 'Other \\(please|specify\\)')) 
-
-d_share_student_agg <- d_share_student %>%
-  group_by(share_student) %>%
-  summarize(
-    share_perc = mean(selected)
-  ) %>% 
-  ungroup() %>% 
-  arrange(share_perc)
-
-d_share_teacher_agg <- d_share_teacher %>%
-  group_by(share_teacher) %>%
-  summarize(
-    share_perc = mean(selected)
-  ) %>% 
-  ungroup() %>% 
-  arrange(share_perc)
-
-out <- inner_join(d_share_student_agg, d_share_teacher_agg, 
-           by=c('share_student'='share_teacher'), 
-           suffix = c("_student", "_teacher")) %>% 
-  mutate(share_perc_student = round(100*share_perc_student, 2)) %>% 
-  mutate(share_perc_teacher = round(100*share_perc_teacher, 2)) %>% 
+  mutate(shareperc_student = round(100*shareperc_student, 2)) %>% 
+  mutate(shareperc_teacher = round(100*shareperc_teacher, 2)) %>% 
+  mutate(cilower_student = round(100*cilower_student, 2)) %>% 
+  mutate(ciupper_student = round(100*ciupper_student, 2)) %>% 
+  mutate(cilower_teacher = round(100*cilower_teacher, 2)) %>% 
+  mutate(ciupper_teacher = round(100*ciupper_teacher, 2)) %>% 
   as.data.frame()
 
-compare_freqs <- function(v1, v2){
-  p0 <- mean(v1)
-  p_value <- binom.test(sum(v2), length(v2), p=p0)$p.value
-  return(p_value)
-}
+d_plot <- out %>%
+  #mutate(share_student) %>% 
+  pivot_longer(cols = c("shareperc_student", "cilower_student", 
+           "ciupper_student", "shareperc_teacher", "cilower_teacher", 
+           "ciupper_teacher")) %>%
+  separate(name, into=c('metric', 'context'), sep='_') %>%
+  pivot_wider(names_from=metric, values_from=value)
 
-for (element in d_share_teacher$share_teacher %>% unique()){
-  print(element)
-  v1 <- d_share_teacher %>% filter(share_teacher==element) %>% pull(selected)
-  v2 <- d_share_student %>% filter(share_student==element) %>% pull(selected)
-  print(compare_freqs(v1, v2))
-}
-d_share_teacher
-d_share_student
+# Novice, Experience contrast
+# student_data, principal not significant
+# student data, subject colleague
+# student data, coaching expert
+# student data, subject coordinator
+# student data, colleages from same year
+d_plot %>%
+  filter(context=='student') %>%
+  select(share_student, high_experience, matches('^n'), -matches('teacher'))
+binom.test(35, 66, p = 30/50) # student_data, principal, p>.2
+binom.test(28, 66, p = 16/50) # student_data, subject colleague p = .085
+binom.test(18, 66, p = 9/50) # student data, coaching expert, p = .055
+binom.test(21, 66, p = 9/50) # student data, subject coordinator, p = .006
+binom.test(16, 66, p = 5/50)# student data, colleagues from same year, p < .001
+# All other  p > 0.5
 
 
-out
-out %>% write_csv('tmp.csv')
+d_plot %>% 
+  rename(item = share_student) %>%
+  mutate(
+    high_experience = ifelse(high_experience==1, 'Experienced', 'Novice')
+  ) %>% 
+  mutate(
+    context = ifelse(context=='student', 'Student Data', 'Teacher Data')
+  ) %>% 
+  ggplot(aes(x = reorder(item, shareperc), y = shareperc)) +
+  stat_summary(geom = "bar", fun = mean, position = "dodge") +
+  geom_bar(stat = "identity") +
+  geom_errorbar(aes(ymin = cilower, ymax = ciupper), position = "dodge") + 
+  geom_errorbar(stat='summary', width=.2) + 
+  labs(title = "Data Sharing Acceptance",
+       x = "Data Item",
+       y = "% Acceptance",
+       caption = "") +
+  theme_minimal() +
+  coord_flip() + 
+  facet_wrap(~context+high_experience)
 
-d_share_teacher
+# Experience ~ Analytics preferences (EC-TEL 24 RQ1)
+
+# Teacher analytics preferences of teachers
 
 coalesce_columns <- function(d_items, suffix) {
   col_names_without_suffix <- gsub(paste0(suffix, "$"), "", names(d_items))
@@ -631,6 +530,8 @@ item_analysis <- function(d, refs, s = 'foo', n_choices=3, choice_split_take=2, 
     group_by(item) %>%
     summarize(
       chosen_prop_ci = calculate_binomial_ci(chosen),
+      nchosen = sum(chosen),
+      nn = n(),
       median_rank = median(rank),
       iqr_rank = IQR(rank),
       mean_rank = mean(rank),
@@ -639,69 +540,115 @@ item_analysis <- function(d, refs, s = 'foo', n_choices=3, choice_split_take=2, 
   return(res %>% arrange(desc(chosen_prop_ci)))
 }
 
+d_1 <- d %>%
+  filter(high_experience==1) %>%
+  item_analysis(refs, s = "the aspects you'd be more interested when reflecting on your teaching practice, with one", n_choices=3) %>%
+  select(item, chosen_prop_ci, nn, nchosen) %>%
+  separate(chosen_prop_ci, into=c('p', 'cilower', 'ciupper'), sep=' ') %>%
+  mutate(p=as.numeric(p), cilower=as.numeric(cilower), ciupper=as.numeric(ciupper)) %>%
+  mutate(high_experience='Expert')
+
+d_2 <- d %>%
+  filter(high_experience==0) %>%
+  item_analysis(refs, s = "the aspects you'd be more interested when reflecting on your teaching practice, with one", n_choices=3) %>%
+  select(item, chosen_prop_ci, nn, nchosen) %>%
+  separate(chosen_prop_ci, into=c('p', 'cilower', 'ciupper'), sep=' ') %>%
+  mutate(p=as.numeric(p), cilower=as.numeric(cilower), ciupper=as.numeric(ciupper)) %>%
+  mutate(high_experience='Novice')
+
+d_plot <- rbind(d_1, d_2) %>%
+  arrange(item)
+
+# my_monitoring_of_student_progress_and_learning
+# my_teaching_methods_what_you_do_in_classroom
+# student_discipline_and_behavior
+d_plot %>%
+  select(item, high_experience, nn, nchosen, p)
+binom.test(20, 60, p = 18/42) # my_monitoring_of_student_progress_and_learning p = .152
+binom.test(25, 60, p = 11/42) # my_teaching_methods_what_you_do_in_classroom, p=.012
+binom.test(12, 60, p = 13/42) # student_discipline_and_behavior,  p = .070
+
+d_plot %>% 
+  ggplot(aes(x = reorder(item, p), y = p)) +
+  stat_summary(geom = "bar", fun = mean, position = "dodge") +
+  geom_bar(stat = "identity") +
+  geom_errorbar(aes(ymin = cilower, ymax = ciupper), position = "dodge") + 
+  geom_errorbar(stat='summary', width=.2) + 
+  labs(title = "Teacher Analytics Preferences",
+       x = "Analytics",
+       y = "% Top 3 Rank",
+       caption = "") +
+  theme_minimal() +
+  coord_flip() + 
+  facet_wrap(~high_experience)
+
+# Student analytics preferences of teachers
+
+d_1 <- d %>%
+  filter(high_experience==1) %>%
+  item_analysis(refs, s = "rank the kind of information about your students you would be more interested in accessing when reflecting ", n_choices=3, choice_split_take=4) %>%
+  select(item, chosen_prop_ci, nn, nchosen) %>%
+  separate(chosen_prop_ci, into=c('p', 'cilower', 'ciupper'), sep=' ') %>%
+  mutate(p=as.numeric(p), cilower=as.numeric(cilower), ciupper=as.numeric(ciupper)) %>%
+  mutate(high_experience='Expert')
+
+d_2 <- d %>%
+  filter(high_experience==0) %>%
+  item_analysis(refs, s = "rank the kind of information about your students you would be more interested in accessing when reflecting ", n_choices=3, choice_split_take=4) %>% 
+  select(item, chosen_prop_ci, nn, nchosen) %>%
+  separate(chosen_prop_ci, into=c('p', 'cilower', 'ciupper'), sep=' ') %>%
+  mutate(p=as.numeric(p), cilower=as.numeric(cilower), ciupper=as.numeric(ciupper)) %>%
+  mutate(high_experience='Novice')
+
+d_plot <- rbind(d_1, d_2) %>%
+  arrange(item)
+
+d_plot
+
+# improved_learning_after_i_help_a_student
+# misconceptions_in_learning
+# student_learning_and_progress
+# students_common_errors
+# students_disengagement
+# students_emotions
+# students_feedback
+d_plot %>%
+  select(item, high_experience, nn, nchosen, p)
+binom.test(24, 60, p = 11/42) # improved_learning_after_i_help_a_student, p = .019
+binom.test(20, 60, p = 20/42) # students_disengagement,  p = .028
+binom.test(11, 60, p = 13/42) # students_emotions,  p = .036
+binom.test(38, 60, p = 22/42) # student_learning_and_progress,  p = .094
+binom.test(22, 60, p = 20/42) # students_feedback,  p = .094
+binom.test(16, 60, p = 14/42) # misconceptions_in_learning, p=.337
+binom.test(19, 60, p = 10/42) # students_common_errors,  p = 172
+
+d_plot %>% 
+  mutate(
+    item = ifelse(
+      item == 'information_from_learning_software_about_students_mastery_of_new_skills_and_knowledge',
+      'learning_software_mastery',
+      item
+    )
+  ) %>%
+  mutate(
+    item = ifelse(
+      item == 'information_from_learning_software_about_students_progress',
+      'learning_software_progress',
+      item
+    )
+  ) %>%
+  ggplot(aes(x = reorder(item, p), y = p)) +
+  stat_summary(geom = "bar", fun = mean, position = "dodge") +
+  geom_bar(stat = "identity") +
+  geom_errorbar(aes(ymin = cilower, ymax = ciupper), position = "dodge") + 
+  geom_errorbar(stat='summary', width=.2) + 
+  labs(title = "Student Analytics Preferences",
+       x = "Analytics",
+       y = "% Top 3 Rank",
+       caption = "") +
+  theme_minimal() +
+  coord_flip() + 
+  facet_wrap(~high_experience)
 
 
-# RQ 1
 
-item_analysis(d, refs, s = "Rank the factors you selected in the previous question, with one ", n_choices=3)
-item_analysis(d, refs, s = "the aspects you'd be more interested when reflecting on your teaching practice, with one", n_choices=3)
-item_analysis(d, refs, s = "rank the kind of information about your students you would be more interested in accessing when reflecting ", n_choices=3, choice_split_take=4)
-item_analysis(d, refs, s = "Rank the following methods for collecting students’ information ", n_choices=3)
-item_analysis(d, refs, s = "Several sources for collecting teacher data", n_choices=5)
-item_analysis(d, refs, s = "Rank your preferences about the people you would like to have", n_choices=2, choice_split_take = 10)
-item_analysis(d, refs, s = "Rank your preferences to keep track of your reflection sessions", n_choices=3, choice_split_take = 10)
-
-# Final question selection RQ1
-sink('author-survey-reference.txt')
-cat('############# RQ1 preferences ############# \n')
-item_analysis(d, refs, s = "the aspects you'd be more interested when reflecting on your teaching practice, with one", n_choices=3)
-item_analysis(d, refs, s = "rank the kind of information about your students you would be more interested in accessing when reflecting ", n_choices=3, choice_split_take=4)
-item_analysis(d, refs, s = "you would like to have access to when reflecting on the most important aspect of your teaching practice selected before, ", n_choices=3, choice_split_take=4)
-cat('############################### \n\n')
-cat('############# RQ2 acceptance ############# \n')
-d_what_students <- return_rankings(d, refs, s = "Several sources for collecting data from your students ", n_choices=4)
-d_what_teachers <- return_rankings(d, refs, s = "Several sources for collecting teacher data ", n_choices=5)
-cat('############################### \n\n')
-cat('############# RQ3 share ############# \n')
-d_share <- return_column(d, refs, s = "with whom") %>% 
-  select(-matches('text')) %>% 
-  `colnames<-`(c('share_student', 'share_teacher'))
-cat('###############################\n')
-sink()
-
-# Test of top choice was second
-binom.test(60, 116, 0.414)
-# Ranks
-
-# Follow up pathway dependency analysis
-
-# Dependency analysis RQ2 based on split top item RQ1
-
-d_ref_posthoc <- item_analysis(d, refs, s = "the aspects you'd be more interested when reflecting on your teaching practice, with one", 
-              n_choices=3, return_d_items = TRUE) %>% 
-  filter(item == 'how_i_motivate_and_help_students') %>% 
-  select(response_id, chosen_motivate=chosen)
-
-d_posthoc <- d_acceptance_test %>% 
-  left_join(d_ref_posthoc, by='response_id') 
-
-median(d_posthoc$rank_student[d_posthoc$chosen_motivate & d_posthoc$item=='audio'])
-median(d_posthoc$rank_student[!d_posthoc$chosen_motivate & d_posthoc$item=='audio'])
-
-median(d_posthoc$rank_student[d_posthoc$chosen_motivate & d_posthoc$item=='video'])
-median(d_posthoc$rank_student[!d_posthoc$chosen_motivate & d_posthoc$item=='video'])
-
-median(d_posthoc$rank_student[d_posthoc$chosen_motivate & d_posthoc$item=='log data'])
-median(d_posthoc$rank_student[!d_posthoc$chosen_motivate & d_posthoc$item=='log data'])
-
-mean(d_posthoc$rank_student[d_posthoc$chosen_motivate & d_posthoc$item=='location'])
-mean(d_posthoc$rank_student[!d_posthoc$chosen_motivate & d_posthoc$item=='location'])
-
-wilcox.test(d_posthoc$rank_student[d_posthoc$chosen_motivate & d_posthoc$item=='audio'], 
-            d_posthoc$rank_student[!d_posthoc$chosen_motivate & d_posthoc$item=='audio'], paired = FALSE)
-wilcox.test(d_posthoc$rank_student[d_posthoc$chosen_motivate & d_posthoc$item=='video'], 
-            d_posthoc$rank_student[!d_posthoc$chosen_motivate & d_posthoc$item=='video'], paired = FALSE)
-wilcox.test(d_posthoc$rank_student[d_posthoc$chosen_motivate & d_posthoc$item=='log data'], 
-            d_posthoc$rank_student[!d_posthoc$chosen_motivate & d_posthoc$item=='log data'], paired = FALSE)
-wilcox.test(d_posthoc$rank_student[d_posthoc$chosen_motivate & d_posthoc$item=='location'], 
-            d_posthoc$rank_student[!d_posthoc$chosen_motivate & d_posthoc$item=='location'], paired = FALSE)
