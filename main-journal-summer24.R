@@ -7,10 +7,18 @@ d <- read_csv('survey-data-nov14-23.csv') %>%
 
 #
 convert_range_to_numeric_center <- function(range_string) {
-  bounds <- as.numeric(unlist(strsplit(range_string, " - ")))
-  center <- mean(bounds, na.rm = TRUE)
-  return(center)
+  if (grepl("More than", range_string)) {
+    return(as.numeric(gsub("[^0-9.]+", "", range_string)) + 1)
+  } else if (grepl("Less than", range_string)) {
+    return(as.numeric(gsub("[^0-9.]+", "", range_string)) - 1)
+  } else {
+    range_string <- range_string %>% str_remove(' years')
+    bounds <- as.numeric(unlist(strsplit(range_string, " - ")))
+    center <- mean(bounds, na.rm = TRUE)
+    return(center)
+  }
 }
+
 d$q1_31 %>% sapply(convert_range_to_numeric_center) %>% as.numeric() %>% mean(na.rm=TRUE)
 
 # Descriptions
@@ -141,6 +149,282 @@ ggplot(d_plot, aes(x = reorder(item, perc_top_3), y = perc_top_3)) +
   theme_minimal() +
   coord_flip() 
 
+## Differnetial analysis
+
+# Experience split
+s='how long have you worked as a teacher'
+cols <- get_column_by_desc(d, refs, s)
+cat("columns are: ", cols, '\n')
+d['experience_years'] <- d$q4_34 %>% sapply(convert_range_to_numeric_center) %>% as.numeric()
+d['high_experience'] <- ifelse(d$experience_years<median(d$experience_years, na.rm=TRUE), 0, 1)
+median(d$experience_years, na.rm=TRUE)
+
+d_rank_tmp <- d %>% 
+  filter(!is.na(q5_145)) %>%
+  filter(!is.na(high_experience)) %>%
+  select(q5_145, high_experience) %>%
+  separate(q5_145, into=c('p11', 'p2', 'p3'), sep=',') %>%
+  mutate(response_id = 1:n()) 
+
+d_rank <- d_rank_tmp %>%
+  select(-high_experience) %>%
+  pivot_longer(cols = -c(response_id)) %>%
+  mutate(rank = name %>% str_extract('[0-9]+') %>% as.numeric()) %>%
+  select(-name) %>%
+  rename(option=value) %>%
+  complete(response_id, option, fill = list(rank=6.5)) %>% # 9 options. neutral rank 4:9 is 6.5
+  mutate(is_top_3 = rank<6.5) %>%
+  left_join(d_rank_tmp %>% select(response_id, high_experience), by='response_id')
+
+d_plot <- d_rank %>%
+  group_by(option, high_experience) %>%
+  summarize(
+    mean_rank = mean(rank),
+    median_rank = median(rank),
+    prob_top_3 = mean(is_top_3),
+    ci_lower = binom.test(sum(is_top_3), n(), conf.level = 0.95)$conf.int[1],
+    ci_upper = binom.test(sum(is_top_3), n(), conf.level = 0.95)$conf.int[2]
+  ) %>%
+  ungroup() %>%
+  arrange(desc(prob_top_3)) %>%
+  mutate(perc_top_3 = round(100*prob_top_3, 1)) %>%
+  mutate(ci_lower = round(100*ci_lower, 1)) %>%
+  mutate(ci_upper = round(100*ci_upper, 1)) 
+
+d_plot %>%
+  select(option, high_experience, prob_top_3, ci_lower, ci_upper) %>%
+  pivot_wider(names_from = high_experience, values_from = c('prob_top_3', 'ci_lower', 'ci_upper')) %>%
+  select(option, matches('_1'), matches('_0'))
+
+# Tests manually for "Not enough time for reflection" and
+# "Difficulties in keeping track of student's performance" and 
+d_rank %>%
+  group_by(option, high_experience) %>%
+  summarize(
+    prob_top_3 = mean(is_top_3),
+    n_top_3 = sum(is_top_3),
+    n = n()
+  )
+binom.test(7, 58, p = 15/41) # Not enough time < .001
+binom.test(16, 58, p = 6/41) # Keeping track < .01
+# All other were p > .06
+ 
+d_plot %>% 
+  mutate(option = ifelse(
+    option=='Not enough time for reflection', 'Not enough time for reflection***',
+    option
+  )) %>% 
+  mutate(option = ifelse(
+    option=="Difficulties in keeping track of student's performance", 
+    "Difficulties in keeping track of student's performance**",
+    option
+  )) %>% 
+  mutate(
+    high_experience = ifelse(high_experience==1, 'Experienced', 'Novice')
+  ) %>% 
+ggplot(aes(x = reorder(option, perc_top_3), y = perc_top_3)) +
+  stat_summary(geom = "bar", fun = mean, position = "dodge") +
+  geom_bar(stat = "identity") +
+  geom_errorbar(aes(ymin = ci_lower, ymax = ci_upper), position = "dodge") + 
+  geom_errorbar(stat='summary', width=.2) + 
+  labs(title = "Reasons Teachers Do Not Reflect",
+       x = "Reason",
+       y = "% Inclusion in Top 3 Choices",
+       caption = "What are the factors that prevent you from reflecting on your teaching practice?") +
+  theme_minimal() +
+  coord_flip() + 
+  facet_wrap(~high_experience)
+
+# Motivation
+
+d_rank <- return_rankings(d, refs, s = "your main reasons for reflecting on the teaching practices", n_choices=3) %>%
+  left_join(d %>% select(response_id, high_experience), by='response_id')
+
+d_plot <- d_rank %>%
+  filter(!is.na(high_experience)) %>% 
+  group_by(item, high_experience) %>%
+  summarize(
+    mean_rank = mean(rank),
+    median_rank = median(rank),
+    prob_top_3 = mean(chosen),
+    ci_lower = binom.test(sum(chosen), n(), conf.level = 0.95)$conf.int[1],
+    ci_upper = binom.test(sum(chosen), n(), conf.level = 0.95)$conf.int[2]
+  ) %>%
+  ungroup() %>%
+  arrange(desc(prob_top_3)) %>%
+  mutate(perc_top_3 = round(100*prob_top_3, 1)) %>%
+  mutate(ci_lower = round(100*ci_lower, 1)) %>%
+  mutate(ci_upper = round(100*ci_upper, 1)) 
+
+d_plot %>%
+  select(item, high_experience, prob_top_3, ci_lower, ci_upper) %>%
+  pivot_wider(names_from = high_experience, values_from = c('prob_top_3', 'ci_lower', 'ci_upper')) %>%
+  select(item, matches('_1'), matches('_0'))
+
+# to_get_formal_feedback
+# to_get_informal_feedback
+d_rank %>%
+  filter(!is.na(high_experience)) %>% 
+  group_by(item, high_experience) %>%
+  summarize(
+    prob_top_3 = mean(chosen),
+    n_top_3 = sum(chosen),
+    n = n()
+  )
+binom.test(27, 60, p = 13/42) # get informal feedback < .05
+binom.test(9, 60, p = 11/42) # formal feedback p = .055
+# All other  p > 0.5
+
+d_plot %>% 
+  mutate(item = ifelse(
+    item=='to_get_informal_feedback', 'to_get_informal_feedback*',
+    item
+  )) %>% 
+  mutate(item = ifelse(
+    item=="to_get_formal_feedback", 
+    "to_get_formal_feedback (p = .055)",
+    item
+  )) %>% 
+  mutate(
+    high_experience = ifelse(high_experience==1, 'Experienced', 'Novice')
+  ) %>% 
+  ggplot(aes(x = reorder(item, perc_top_3), y = perc_top_3)) +
+  stat_summary(geom = "bar", fun = mean, position = "dodge") +
+  geom_bar(stat = "identity") +
+  geom_errorbar(aes(ymin = ci_lower, ymax = ci_upper), position = "dodge") + 
+  geom_errorbar(stat='summary', width=.2) + 
+  labs(title = "Reasons For Reflection",
+       x = "Reason",
+       y = "% Inclusion in Top 3 Choices",
+       caption = "What would be your main reasons for reflecting on your teaching practices?") +
+  theme_minimal() +
+  coord_flip() + 
+  facet_wrap(~high_experience)
+
+# Dependency analysis RQ2  ECTEL based on experience
+
+# No differential data acceptance based on experience
+
+d_what_students <- return_rankings(d, refs, s = "Several sources for collecting data from your students ", n_choices=4)
+d_what_teachers <- return_rankings(d, refs, s = "Several sources for collecting teacher data ", n_choices=5)
+
+d_what_students_eq <- d_what_students %>% 
+  mutate(item = case_when(
+    str_detect(item, 'location') ~ 'location',
+    str_detect(item, 'behavior') ~ 'log data',
+    str_detect(item, 'stress') ~ 'physiological data',
+    TRUE ~ item
+  )) 
+
+d_what_teachers_eq <- d_what_teachers %>% 
+  mutate(item = case_when(
+    str_detect(item, 'location') ~ 'location',
+    str_detect(item, 'behavior') ~ 'log data',
+    str_detect(item, 'stress') ~ 'physiological data',
+    TRUE ~ item
+  )) %>% 
+  arrange(response_id, rank) %>% 
+  filter(item != 'physiological data') %>% 
+  group_by(response_id) %>% 
+  mutate(rank = rank(rank)) %>% # Re-rank for standardization
+  ungroup()
+
+d_acceptance_test <- inner_join(
+  d_what_teachers_eq %>% select(-chosen),
+  d_what_students_eq %>% select(-chosen),
+  by=c('response_id', 'item'),
+  suffix=c('_teacher', '_student')
+)
+
+d_posthoc <- d_acceptance_test %>% 
+  left_join(d %>% select(response_id, high_experience), by='response_id') %>%
+  mutate(chosen_motivate = ifelse(high_experience==1, TRUE, FALSE))  %>% # To be renamed
+  filter(!is.na(chosen_motivate))
+
+median(d_posthoc$rank_student[d_posthoc$chosen_motivate & d_posthoc$item=='audio'])
+median(d_posthoc$rank_student[!d_posthoc$chosen_motivate & d_posthoc$item=='audio'])
+
+median(d_posthoc$rank_student[d_posthoc$chosen_motivate & d_posthoc$item=='video'])
+median(d_posthoc$rank_student[!d_posthoc$chosen_motivate & d_posthoc$item=='video'])
+
+median(d_posthoc$rank_student[d_posthoc$chosen_motivate & d_posthoc$item=='log data'])
+median(d_posthoc$rank_student[!d_posthoc$chosen_motivate & d_posthoc$item=='log data'])
+
+mean(d_posthoc$rank_student[d_posthoc$chosen_motivate & d_posthoc$item=='location'])
+mean(d_posthoc$rank_student[!d_posthoc$chosen_motivate & d_posthoc$item=='location'])
+
+wilcox.test(d_posthoc$rank_student[d_posthoc$chosen_motivate & d_posthoc$item=='audio'], 
+            d_posthoc$rank_student[!d_posthoc$chosen_motivate & d_posthoc$item=='audio'], paired = FALSE)
+wilcox.test(d_posthoc$rank_student[d_posthoc$chosen_motivate & d_posthoc$item=='video'], 
+            d_posthoc$rank_student[!d_posthoc$chosen_motivate & d_posthoc$item=='video'], paired = FALSE)
+wilcox.test(d_posthoc$rank_student[d_posthoc$chosen_motivate & d_posthoc$item=='log data'], 
+            d_posthoc$rank_student[!d_posthoc$chosen_motivate & d_posthoc$item=='log data'], paired = FALSE)
+wilcox.test(d_posthoc$rank_student[d_posthoc$chosen_motivate & d_posthoc$item=='location'], 
+            d_posthoc$rank_student[!d_posthoc$chosen_motivate & d_posthoc$item=='location'], paired = FALSE)
+
+
+wilcox.test(d_posthoc$rank_teacher[d_posthoc$chosen_motivate & d_posthoc$item=='audio'], 
+            d_posthoc$rank_teacher[!d_posthoc$chosen_motivate & d_posthoc$item=='audio'], paired = FALSE)
+wilcox.test(d_posthoc$rank_teacher[d_posthoc$chosen_motivate & d_posthoc$item=='video'], 
+            d_posthoc$rank_teacher[!d_posthoc$chosen_motivate & d_posthoc$item=='video'], paired = FALSE)
+wilcox.test(d_posthoc$rank_teacher[d_posthoc$chosen_motivate & d_posthoc$item=='log data'], 
+            d_posthoc$rank_teacher[!d_posthoc$chosen_motivate & d_posthoc$item=='log data'], paired = FALSE)
+wilcox.test(d_posthoc$rank_teacher[d_posthoc$chosen_motivate & d_posthoc$item=='location'], 
+            d_posthoc$rank_teacher[!d_posthoc$chosen_motivate & d_posthoc$item=='location'], paired = FALSE)
+
+# Data sharing?
+
+d_share <- return_column(d, refs, s = "with whom") %>% 
+  select(-matches('text')) %>% 
+  `colnames<-`(c('share_student', 'share_teacher')) %>%
+  cbind(., d %>% select(high_experience))
+
+get_desc_by_column(d, refs, names(d_share))
+
+d_share_student <- d_share %>% 
+  select(share_student, high_experience) %>% 
+  mutate(teacher = paste('participant', 1:n(), sep='-')) %>% 
+  mutate(share_student = str_split(share_student, ',')) %>% 
+  unchop(share_student) %>% 
+  mutate(selected=TRUE) %>% 
+  complete(share_student, teacher, fill = list(selected=FALSE)) %>% 
+  arrange(teacher, high_experience) %>%
+  fill(high_experience, .direction='down') %>% 
+  filter(!str_detect(share_student, 'Other \\(please|specify\\)')) 
+
+d_share_teacher <- d_share %>% 
+  select(share_teacher, high_experience) %>% 
+  mutate(teacher = paste('participant', 1:n(), sep='-')) %>% 
+  mutate(share_teacher = str_split(share_teacher, ',')) %>% 
+  unchop(share_teacher) %>% 
+  mutate(selected=TRUE) %>% 
+  complete(share_teacher, teacher, fill = list(selected=FALSE)) %>% 
+  arrange(teacher, high_experience) %>%
+  fill(high_experience, .direction='down') %>% 
+  filter(!str_detect(share_teacher, 'Other \\(please|specify\\)')) 
+
+d_share_student_agg <- d_share_student %>%
+  group_by(share_student, high_experience) %>%
+  summarize(
+    share_perc = mean(selected)
+  ) %>% 
+  ungroup() %>% 
+  arrange(share_student)
+
+d_share_teacher_agg <- d_share_teacher %>%
+  group_by(share_teacher) %>%
+  summarize(
+    share_perc = mean(selected)
+  ) %>% 
+  ungroup() %>% 
+  arrange(share_perc)
+
+out <- inner_join(d_share_student_agg, d_share_teacher_agg, 
+                  by=c('share_student'='share_teacher'), 
+                  suffix = c("_student", "_teacher")) %>% 
+  mutate(share_perc_student = round(100*share_perc_student, 2)) %>% 
+  mutate(share_perc_teacher = round(100*share_perc_teacher, 2)) %>% 
+  as.data.frame()
 ###### OLD CODE #######
 
 # What data (teacher vs. student)
