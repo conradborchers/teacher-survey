@@ -5,6 +5,11 @@ d <- read_csv('survey-data-nov14-23.csv') %>%
   janitor::clean_names() %>% 
   slice(3:n()) # headers
 
+# Relevant questions for topic modeling on "values":
+# q161, q159, q124, q167, q187_228, q125, q173, q176, q80
+
+d %>%
+  select(q161, q159, q124, q167, q187_228, q125, q173, q176, q80)
 #
 convert_range_to_numeric_center <- function(range_string) {
   bounds <- as.numeric(unlist(strsplit(range_string, " - ")))
