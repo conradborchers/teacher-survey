@@ -4,7 +4,6 @@ library(binom)
 d <- read_csv('survey-data-nov14-23.csv') %>% 
   janitor::clean_names() %>% 
   slice(3:n()) # headers
-
 #
 convert_range_to_numeric_center <- function(range_string) {
   if (grepl("More than", range_string)) {
