@@ -103,8 +103,11 @@ d_rank <- d %>%
   rename(option=value) %>%
   complete(response_id, option, fill = list(rank=6.5)) %>% # 9 options. neutral rank 4:9 is 6.5
   mutate(is_top_3 = rank<6.5)
-  
+
 d_plot <- d_rank %>%
+  mutate(option = ifelse(
+    str_detect(option, 'Other'), 'Other', option
+  )) %>%
   group_by(option) %>%
   summarize(
     mean_rank = mean(rank),
@@ -115,10 +118,12 @@ d_plot <- d_rank %>%
   arrange(desc(prob_top_3)) %>%
   mutate(perc_top_3 = round(100*prob_top_3, 1))
 
-ggplot(d_plot, aes(x = reorder(option, perc_top_3), y = perc_top_3)) +
+d_plot %>% select(option, perc_top_3)
+
+p1 <- ggplot(d_plot, aes(x = reorder(option, perc_top_3), y = perc_top_3)) +
   geom_bar(stat = "identity") +
   labs(title = "Reasons Teachers Do Not Reflect",
-       x = "Reason",
+       x = "",
        y = "% Inclusion in Top 3 Choices",
        caption = "What are the factors that prevent you from reflecting on your teaching practice?") +
   theme_minimal() +
@@ -129,6 +134,17 @@ ggplot(d_plot, aes(x = reorder(option, perc_top_3), y = perc_top_3)) +
 d_rank <- return_rankings(d, refs, s = "your main reasons for reflecting on the teaching practices", n_choices=3)
 
 d_plot <- d_rank %>%
+  mutate(item = ifelse(
+    str_detect(item, 'Other'), 'Other', item
+  )) %>%
+  mutate(item = case_when(
+    str_detect(item, 'opportuniti') ~ "Finding Opportunities for Improvement",
+    str_detect(item, 'goal') ~ "Setting Goals for My Teaching Practice",
+    str_detect(item, 'measure') ~ "Measuring My Teaching Performance",
+    str_detect(item, 'informal') ~ "Getting Informal Feedback",
+    str_detect(item, 'evidence') ~ "Having Evidence of My Progress",
+    str_detect(item, '_formal_feedback') ~ "Getting Formal Feedback"
+  )) %>%
   group_by(item) %>%
   summarize(
     mean_rank = mean(rank),
@@ -139,14 +155,20 @@ d_plot <- d_rank %>%
   arrange(desc(prob_top_3)) %>%
   mutate(perc_top_3 = round(100*prob_top_3, 1))
 
-ggplot(d_plot, aes(x = reorder(item, perc_top_3), y = perc_top_3)) +
+d_plot %>% select(item, perc_top_3)
+
+p2 <- ggplot(d_plot, aes(x = reorder(item, perc_top_3), y = perc_top_3)) +
   geom_bar(stat = "identity") +
-  labs(title = "Reasons For Reflection",
-       x = "Reason",
+  labs(title = "Motivation for Reflection",
+       x = "",
        y = "% Inclusion in Top 3 Choices",
        caption = "What would be your main reasons for reflecting on your teaching practices?") +
   theme_minimal() +
   coord_flip() 
+
+png("rq1-aied25.png", width = 760*10, height = 380*10, res = 72*10)
+gridExtra::grid.arrange(p1, p2, ncol=2)
+dev.off()
 
 ## Differnetial analysis
 
@@ -651,3 +673,10 @@ d_plot %>%
 
 
 
+n <- 100 # sample size
+pval <- replicate(10000, { # replications of experiment
+  x <- rbinom(1, size = n, # data-generating model with
+              prob = 0.5 + 0.15) # minimum relevant effect
+  binom.test(x, n = n, p = 0.5)$p.value # p-value of test against H0
+})
+mean(pval < 0.05) # simulated power at alpha = 0.05
